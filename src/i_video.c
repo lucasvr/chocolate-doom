@@ -18,6 +18,8 @@
 
 
 #include <stdlib.h>
+#include <sys/shm.h>
+#include <sys/ipc.h>
 
 #include "SDL.h"
 #include "SDL_opengl.h"
@@ -201,6 +203,10 @@ int usegamma = 0;
 // Joystick/gamepad hysteresis
 unsigned int joywait = 0;
 
+// Shared memory segment identifier for the framebuffer
+static int shared_memory_id = -1;
+static void *shared_memory_segment = NULL;
+
 static boolean MouseShouldBeGrabbed()
 {
     // never grab the mouse when in screensaver mode
@@ -274,6 +280,12 @@ void I_ShutdownGraphics(void)
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
 
         initialized = false;
+
+        // Tear down shared framebuffer
+        shmdt(shared_memory_segment);
+        shmctl(shared_memory_id, IPC_RMID, NULL);
+        shared_memory_segment = NULL;
+        shared_memory_id = -1;
     }
 }
 
@@ -1354,6 +1366,34 @@ static void SetVideoMode(void)
     CreateUpscaledTexture(true);
 }
 
+//
+// Initialize shared framebuffer
+//
+pixel_t *I_InitSharedFramebuffer()
+{
+    ssize_t size = (3 * 256) + (SCREENWIDTH * SCREENHEIGHT);
+    shared_memory_id = shmget(666, size, IPC_CREAT|0644);
+    if (shared_memory_id < 0)
+    {
+        fprintf(stderr, "Failed to allocate shared memory segment\n");
+        return NULL;
+    }
+
+    shared_memory_segment = shmat(shared_memory_id, NULL, 0);
+    if (shared_memory_segment == (void *) -1)
+    {
+        fprintf(stderr, "Failed to attach to shared memory segment\n");
+        return NULL;
+    }
+
+    // Copy the game palette to the shm
+    byte *palette = W_CacheLumpName (DEH_String("PLAYPAL"), PU_CACHE);
+    memcpy(shared_memory_segment, palette, 3*256);
+
+    // Configure the engine to render frames to the shm buffer
+    return (pixel_t *) (((char *) shared_memory_segment) + (3*256));
+}
+
 void I_InitGraphics(void)
 {
     SDL_Event dummy;
@@ -1434,7 +1474,8 @@ void I_InitGraphics(void)
     // 32-bit RGBA screen buffer that gets loaded into a texture that gets
     // finally rendered into our window or full screen in I_FinishUpdate().
 
-    I_VideoBuffer = screenbuffer->pixels;
+    I_VideoBuffer = I_InitSharedFramebuffer();
+    screenbuffer->pixels = I_VideoBuffer;
     V_RestoreBuffer();
 
     // Clear the screen to black.
