@@ -1,3 +1,12 @@
+# Doom: HDF5-UDF mod
+
+This clone contains modifications to allow Doom's game framebuffer to be
+exported through a System V shared memory segment. This modification has
+been introduced to demonstrate how user-defined functions embedded in HDF5
+files can interface with other processes in unexpected ways. Please visit
+the [HDF5-UDF project page](https://github.com/lucasvr/hdf5-udf) for more
+details.
+
 # Chocolate Doom
 
 Chocolate Doom aims to accurately reproduce the original DOS version of
